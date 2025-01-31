@@ -18,7 +18,7 @@
 ### 一键安装
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/hy2.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/alpinehy2install.sh)
 ```
 
 ### 使用方法
