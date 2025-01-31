@@ -12,6 +12,43 @@ DEFAULT_PASSWORD=$(dd if=/dev/random bs=18 count=1 status=none | base64)
 DEFAULT_DOMAIN=""
 DEFAULT_MASQ_SITE="https://news.ycombinator.com/"
 
+# Check if Hysteria 2 is already installed
+check_installed() {
+    if [ -f "/usr/local/bin/hysteria" ] || [ -f "/etc/init.d/hysteria" ]; then
+        echo -e "${YELLOW}检测到已安装 Hysteria 2${NC}"
+        echo -e "请选择操作："
+        echo "1. 卸载重装"
+        echo "2. 退出"
+        read -p "请输入选项 [1-2]: " choice
+        
+        case "$choice" in
+            1)
+                uninstall_hysteria
+                ;;
+            2)
+                echo "退出安装"
+                exit 0
+                ;;
+            *)
+                echo "无效选项，退出"
+                exit 1
+                ;;
+        esac
+    fi
+}
+
+# Uninstall function
+uninstall_hysteria() {
+    echo -e "${YELLOW}开始卸载 Hysteria 2...${NC}"
+    service hysteria stop
+    rc-update del hysteria default
+    rm -f /usr/local/bin/hysteria
+    rm -f /usr/local/bin/hy2
+    rm -f /etc/init.d/hysteria
+    rm -rf /etc/hysteria
+    echo -e "${GREEN}卸载完成${NC}"
+}
+
 # Install dependencies
 install_dependencies() {
     apk update
@@ -99,10 +136,10 @@ EOF
 
 # Generate hy2 command
 generate_hy2_command() {
-    cat > /usr/local/bin/hy2 << 'EOF'
+    cat > /usr/local/bin/hy2 << EOF
 #!/bin/sh
 
-case "$1" in
+case "\$1" in
     start)
         service hysteria start
         ;;
@@ -119,15 +156,15 @@ case "$1" in
         cat /etc/hysteria/config.yaml
         ;;
     share)
-        PASSWORD=$(grep password /etc/hysteria/config.yaml | awk '{print $2}')
-        PORT=$(grep listen /etc/hysteria/config.yaml | awk -F: '{print $3}')
-        DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
-        [ -z "$DOMAIN" ] && DOMAIN="bing.com"
-        SHARE_LINK="hysteria2://${PASSWORD}@${DOMAIN}:${PORT}/?sni=${DOMAIN}&alpn=h3,h2,http/1.1&insecure=0#${DOMAIN}"
+        PASSWORD=\$(grep password /etc/hysteria/config.yaml | awk '{print \$2}')
+        PORT=\$(grep listen /etc/hysteria/config.yaml | awk -F: '{print \$3}')
+        DOMAIN=\$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print \$2}')
+        [ -z "\$DOMAIN" ] && DOMAIN="bing.com"
+        SHARE_LINK="hysteria2://\${PASSWORD}@\${DOMAIN}:\${PORT}/?sni=\${DOMAIN}&alpn=h3,h2,http/1.1&insecure=0#\${DOMAIN}"
         echo "\nShare Link:"
-        echo "$SHARE_LINK"
+        echo "\$SHARE_LINK"
         echo "\nQR Code:"
-        echo "$SHARE_LINK" | qrencode -t ANSI
+        echo "\$SHARE_LINK" | qrencode -t ANSI
         ;;
     *)
         echo "Usage: hy2 {start|stop|restart|status|config|share}"
@@ -139,10 +176,17 @@ EOF
 
 # Main installation process
 main() {
+    # 检查是否已安装
+    check_installed
+    
     echo -e "${GREEN}开始安装 Hysteria 2...${NC}"
     
-    install_dependencies
+    # 检查必要命令
+    if ! command -v wget >/dev/null 2>&1; then
+        apk add wget
+    fi
     
+    install_dependencies
     get_user_input
     
     # Download Hysteria 2
@@ -164,19 +208,25 @@ main() {
     generate_hy2_command
     
     # Enable and start service
-    rc-update add hysteria
+    rc-update add hysteria default
     service hysteria start
     
-    echo -e "${GREEN}Hysteria 2 安装完成!${NC}"
-    echo -e "${YELLOW}配置信息:${NC}"
-    echo "端口: $PORT"
-    echo "密码: $PASSWORD"
-    echo "域名: ${DOMAIN:-bing.com}"
-    echo -e "\n使用 'hy2' 命令管理服务:"
-    echo "hy2 {start|stop|restart|status|config|share}"
-    
-    # Show share link
-    hy2 share
+    # 验证安装
+    if [ -f "/usr/local/bin/hy2" ] && [ -x "/usr/local/bin/hy2" ]; then
+        echo -e "${GREEN}Hysteria 2 安装完成!${NC}"
+        echo -e "${YELLOW}配置信息:${NC}"
+        echo "端口: $PORT"
+        echo "密码: $PASSWORD"
+        echo "域名: ${DOMAIN:-bing.com}"
+        echo -e "\n使用 'hy2' 命令管理服务:"
+        echo "hy2 {start|stop|restart|status|config|share}"
+        
+        # Show share link
+        /usr/local/bin/hy2 share
+    else
+        echo -e "${RED}安装失败，请检查错误信息${NC}"
+        exit 1
+    fi
 }
 
 main
