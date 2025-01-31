@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Colors for output
 RED='\033[0;31m'
@@ -105,7 +105,17 @@ install_hysteria() {
     
     # Install dependencies
     apk update
-    apk add curl git openssh openssl openrc qrencode
+    apk add curl git openssh openssl openrc
+    # 单独安装并验证 qrencode
+    if ! apk add libqrencode-tools; then
+        echo -e "${RED}安装 qrencode 失败，尝试从社区仓库安装${NC}"
+        apk add --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community libqrencode-tools
+    fi
+    
+    # 验证 qrencode 是否安装成功
+    if ! command -v qrencode >/dev/null 2>&1; then
+        echo -e "${YELLOW}警告: qrencode 安装失败，二维码功能将不可用${NC}"
+    fi
     
     get_user_input
     
@@ -192,7 +202,17 @@ uninstall_hysteria() {
 # Install dependencies
 install_dependencies() {
     apk update
-    apk add wget curl git openssh openssl openrc qrencode
+    apk add wget curl git openssh openssl openrc
+    # 单独安装并验证 qrencode
+    if ! apk add libqrencode-tools; then
+        echo -e "${RED}安装 qrencode 失败，尝试从社区仓库安装${NC}"
+        apk add --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community libqrencode-tools
+    fi
+    
+    # 验证 qrencode 是否安装成功
+    if ! command -v qrencode >/dev/null 2>&1; then
+        echo -e "${YELLOW}警告: qrencode 安装失败，二维码功能将不可用${NC}"
+    fi
 }
 
 # Get user input with default values
@@ -276,10 +296,13 @@ EOF
 
 # Generate hy2 command
 generate_hy2_command() {
-    cat > /usr/local/bin/hy2 << EOF
+    cat > /usr/local/bin/hy2 << 'EOF'
 #!/bin/sh
 
-case "\$1" in
+# 确保 PATH 包含必要路径
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+case "$1" in
     start)
         service hysteria start
         ;;
@@ -296,15 +319,19 @@ case "\$1" in
         cat /etc/hysteria/config.yaml
         ;;
     share)
-        PASSWORD=\$(grep password /etc/hysteria/config.yaml | awk '{print \$2}')
-        PORT=\$(grep listen /etc/hysteria/config.yaml | awk -F: '{print \$3}')
-        DOMAIN=\$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print \$2}')
-        [ -z "\$DOMAIN" ] && DOMAIN="bing.com"
-        SHARE_LINK="hysteria2://\${PASSWORD}@\${DOMAIN}:\${PORT}/?sni=\${DOMAIN}&alpn=h3,h2,http/1.1&insecure=0#\${DOMAIN}"
-        echo "\nShare Link:"
-        echo "\$SHARE_LINK"
-        echo "\nQR Code:"
-        echo "\$SHARE_LINK" | qrencode -t ANSI
+        PASSWORD=$(grep password /etc/hysteria/config.yaml | awk '{print $2}')
+        PORT=$(grep listen /etc/hysteria/config.yaml | awk -F: '{print $3}')
+        DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
+        [ -z "$DOMAIN" ] && DOMAIN="bing.com"
+        SHARE_LINK="hysteria2://${PASSWORD}@${DOMAIN}:${PORT}/?sni=${DOMAIN}&alpn=h3,h2,http/1.1&insecure=0#${DOMAIN}"
+        printf "\nShare Link:\n"
+        printf "%s\n" "$SHARE_LINK"
+        printf "\nQR Code:\n"
+        if command -v qrencode >/dev/null 2>&1; then
+            printf "%s" "$SHARE_LINK" | qrencode -t ANSI
+        else
+            printf "qrencode not found. Please install with: apk add libqrencode-tools\n"
+        fi
         ;;
     *)
         echo "Usage: hy2 {start|stop|restart|status|config|share}"
