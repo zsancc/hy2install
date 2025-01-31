@@ -48,6 +48,22 @@ check_root() {
     [[ $EUID -ne 0 ]] && error "必须使用root用户运行此脚本！"
 }
 
+# 检查依赖是否已安装
+check_package() {
+    local pkg=$1
+    case "$PKG_MANAGER" in
+        "apk")
+            apk info -e "$pkg" > /dev/null 2>&1
+            ;;
+        "apt")
+            dpkg -l "$pkg" > /dev/null 2>&1
+            ;;
+        "yum"|"dnf")
+            rpm -q "$pkg" > /dev/null 2>&1
+            ;;
+    esac
+}
+
 # 检查系统类型
 check_system() {
     if [ -f /etc/os-release ]; then
@@ -58,25 +74,24 @@ check_system() {
                 PKG_UPDATE="apk update"
                 PKG_INSTALL="apk add"
                 USE_OPENRC=true
-                ADDITIONAL_DEPS="openrc curl wget tar unzip libqrencode bash coreutils openssl iptables"
-                
-                if ! grep -q "^http.*community" /etc/apk/repositories; then
-                    echo "https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" >> /etc/apk/repositories
-                fi
                 ;;
             "debian"|"ubuntu")
                 PKG_MANAGER="apt"
                 PKG_UPDATE="apt update"
                 PKG_INSTALL="apt install -y"
                 USE_OPENRC=false
-                ADDITIONAL_DEPS="curl wget tar unzip qrencode"
                 ;;
             "centos"|"rhel"|"fedora")
-                PKG_MANAGER="yum"
-                PKG_UPDATE="yum update -y"
-                PKG_INSTALL="yum install -y"
+                if command -v dnf >/dev/null 2>&1; then
+                    PKG_MANAGER="dnf"
+                    PKG_UPDATE="dnf check-update"
+                    PKG_INSTALL="dnf install -y"
+                else
+                    PKG_MANAGER="yum"
+                    PKG_UPDATE="yum check-update"
+                    PKG_INSTALL="yum install -y"
+                fi
                 USE_OPENRC=false
-                ADDITIONAL_DEPS="curl wget tar unzip qrencode"
                 ;;
             *)
                 error "不支持的系统: $ID"
@@ -89,26 +104,54 @@ check_system() {
 
 # 安装依赖
 install_deps() {
-    info "正在安装依赖..."
-    if [ "$USE_OPENRC" = true ]; then
-        if ! $PKG_UPDATE; then
-            error "更新包索引失败，请检查网络连接和源配置"
-        fi
-        
-        for pkg in $ADDITIONAL_DEPS; do
-            info "安装 $pkg..."
-            if ! $PKG_INSTALL $pkg; then
-                error "安装 $pkg 失败"
-            fi
-        done
-    else
-        $PKG_UPDATE
-        if ! $PKG_INSTALL $ADDITIONAL_DEPS; then
-            error "依赖安装失败"
-        fi
-    fi
+    local missing_deps=()
     
-    info "依赖安装完成"
+    # 定义基础依赖
+    local base_deps="curl wget tar unzip"
+    
+    # 定义系统特定依赖
+    case "$PKG_MANAGER" in
+        "apk")
+            base_deps="$base_deps libqrencode bash coreutils openssl iptables"
+            if ! grep -q "^http.*community" /etc/apk/repositories; then
+                echo "https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" >> /etc/apk/repositories
+            fi
+            ;;
+        "apt")
+            base_deps="$base_deps qrencode"
+            ;;
+        "yum"|"dnf")
+            base_deps="$base_deps qrencode"
+            ;;
+    esac
+    
+    # 检查缺少的依赖
+    for pkg in $base_deps; do
+        if ! check_package "$pkg"; then
+            missing_deps+=("$pkg")
+        fi
+    done
+    
+    # 如果有缺少的依赖，则安装
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        info "正在安装缺少的依赖: ${missing_deps[*]}"
+        if [ "$PKG_MANAGER" = "apk" ]; then
+            if ! $PKG_UPDATE; then
+                error "更新包索引失败，请检查网络连接和源配置"
+            fi
+            for pkg in "${missing_deps[@]}"; do
+                if ! $PKG_INSTALL "$pkg"; then
+                    error "安装 $pkg 失败"
+                fi
+            done
+        else
+            $PKG_UPDATE
+            if ! $PKG_INSTALL "${missing_deps[@]}"; then
+                error "依赖安装失败: ${missing_deps[*]}"
+            fi
+        fi
+        info "依赖安装完成"
+    fi
 }
 
 # 配置防火墙
@@ -395,6 +438,28 @@ service_control() {
     fi
 }
 
+# 交互式配置函数
+configure_server() {
+    echo -e "\n配置 Hysteria 2 服务器\n"
+    
+    # 配置端口
+    local port
+    read -p "请输入端口 [默认: $DEFAULT_PORT]: " port
+    port=${port:-$DEFAULT_PORT}
+    
+    # 配置密码
+    local password
+    read -p "请输入密码 [默认: 随机生成]: " password
+    password=${password:-$(generate_password)}
+    
+    # 配置域名（可选）
+    local domain
+    read -p "请输入域名 [可选]: " domain
+    
+    # 返回配置
+    echo "$port|$password|$domain"
+}
+
 # 安装 Hysteria 2
 install_hysteria() {
     info "开始安装 Hysteria 2..."
@@ -417,7 +482,7 @@ install_hysteria() {
     # 获取最新版本
     info "检查最新版本..."
     local latest_version
-    latest_version=$(curl -s "$GITHUB_API_URL/releases/latest" | grep -o '"tag_name": ".*"' | cut -d'"' -f4)
+    latest_version=$(curl -s "$GITHUB_API_URL/releases/latest" | grep '"tag_name":' | cut -d'"' -f4)
     [ -z "$latest_version" ] && error "无法获取最新版本信息"
     
     info "下载 Hysteria 2 $latest_version..."
@@ -427,19 +492,26 @@ install_hysteria() {
     
     # 创建用户和目录
     info "创建用户和目录..."
-    if [ "$USE_OPENRC" = true ]; then
-        adduser -S -H -s /sbin/nologin hysteria 2>/dev/null
-    else
-        useradd -r -s /sbin/nologin hysteria 2>/dev/null
+    if ! getent group hysteria >/dev/null; then
+        addgroup -S hysteria
+    fi
+    if ! getent passwd hysteria >/dev/null; then
+        adduser -S -H -s /sbin/nologin -G hysteria -g hysteria hysteria
     fi
     
     mkdir -p $CONFIG_DIR $LOG_DIR $DATA_DIR
     chown -R hysteria:hysteria $CONFIG_DIR $LOG_DIR $DATA_DIR
+    chmod -R 755 $LOG_DIR
+    
+    # 获取用户配置
+    local config
+    config=$(configure_server)
+    local port password domain
+    IFS='|' read -r port password domain <<< "$config"
     
     # 生成配置
     info "生成配置文件..."
-    local password=$(generate_password)
-    create_config $DEFAULT_PORT $password
+    create_config "$port" "$password" "$domain"
     
     # 创建服务
     info "配置系统服务..."
@@ -454,15 +526,18 @@ install_hysteria() {
     
     # 配置防火墙
     info "配置防火墙..."
-    configure_firewall $DEFAULT_PORT
+    configure_firewall "$port"
     
     # 启动服务
     info "启动服务..."
     service_control start
     
     info "Hysteria 2 安装完成！"
-    echo "默认端口: $DEFAULT_PORT"
-    echo "默认密码: $password"
+    echo "端口: $port"
+    echo "密码: $password"
+    if [ -n "$domain" ]; then
+        echo "域名: $domain"
+    fi
     show_share_link
 }
 
@@ -473,7 +548,10 @@ main() {
     install_deps
     
     # 创建 hy2 命令链接
-    ln -sf "$0" /usr/local/bin/hy2
+    if [ ! -f "/usr/local/bin/hy2" ]; then
+        cp "$0" "/usr/local/bin/hy2"
+        chmod +x "/usr/local/bin/hy2"
+    fi
     
     if [ "$1" ]; then
         case "$1" in
@@ -600,15 +678,19 @@ view_logs() {
 generate_share_link() {
     local config_file="${CONFIG_DIR}/config.yaml"
     local server_addr=$(curl -s ipv4.icanhazip.com)
-    local port=$(grep -oP 'listen: :\K\d+' "$config_file")
-    local password=$(grep -oP 'password: \K.*' "$config_file")
-    local domain=$(grep -oP 'domains:.*\n.*- \K.*' "$config_file" || echo "")
+    local port=$(sed -n 's/^listen: :\([0-9]*\)/\1/p' "$config_file")
+    local password=$(sed -n 's/^  password: \(.*\)/\1/p' "$config_file")
+    local domain=$(sed -n '/^acme:/,/^[^ ]/s/^    - \(.*\)/\1/p' "$config_file" | head -1)
     
     if [ -n "$domain" ]; then
         server_addr=$domain
     fi
     
-    echo "hy2://${password}@${server_addr}:${port}"
+    if [ -n "$server_addr" ] && [ -n "$port" ] && [ -n "$password" ]; then
+        echo "hy2://${password}@${server_addr}:${port}"
+    else
+        error "无法生成分享链接：配置信息不完整"
+    fi
 }
 
 # 显示分享链接
