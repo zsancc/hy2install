@@ -44,24 +44,17 @@ install_base() {
 # 安装 Hysteria2
 install_hysteria() {
     if [[ ${release} == "alpine" ]]; then
+        echo -e "${GREEN}开始安装 Hysteria 2...${PLAIN}"
+        
         # 安装必要的包
-        apk add curl wget tar shadow
-
-        # 创建 hysteria 用户
-        create_hysteria_user
-
-        # 获取最新版本号
-        latest_version=$(curl -s "https://api.github.com/repos/apernet/hysteria/releases/latest" | sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p')
+        apk add --no-cache curl wget tar shadow
         
-        if [[ -z "${latest_version}" ]]; then
-            echo -e "${RED}获取版本信息失败，请检查网络${PLAIN}"
-            exit 1
-        fi
+        # 创建用户
+        adduser -S -H -s /sbin/nologin hysteria 2>/dev/null
         
-        echo -e "${GREEN}获取到最新版本：${latest_version}${PLAIN}"
-        
-        # 下载二进制文件
-        wget -O hysteria.tar.gz "https://github.com/apernet/hysteria/releases/download/${latest_version}/hysteria-linux-amd64.tar.gz"
+        # 下载最新版本
+        echo -e "${GREEN}下载 Hysteria 2...${PLAIN}"
+        wget -O hysteria.tar.gz "https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64.tar.gz"
         
         if [[ $? != 0 ]]; then
             echo -e "${RED}下载 Hysteria2 失败，请检查网络${PLAIN}"
@@ -74,10 +67,8 @@ install_hysteria() {
         chmod +x /usr/local/bin/hysteria
         rm -f hysteria.tar.gz
         
-        # 创建配置目录
+        # 创建目录
         mkdir -p /etc/hysteria
-        
-        # 创建日志目录
         mkdir -p /var/log/hysteria
         
         # 创建 OpenRC service 文件
@@ -116,7 +107,6 @@ EOF
         
         echo -e "${GREEN}Hysteria2 安装完成！${PLAIN}"
     else
-        # 设置环境变量跳过 systemd 检查
         export FORCE_NO_SYSTEMD=2
         bash <(curl -fsSL https://get.hy2.sh/)
         if [[ $? != 0 ]]; then
@@ -364,16 +354,6 @@ remove_hysteria() {
         rm -rf /etc/hysteria
     else
         bash <(curl -fsSL https://get.hy2.sh/) --remove
-    fi
-}
-
-# 添加创建用户函数
-create_hysteria_user() {
-    if [[ ${release} == "alpine" ]]; then
-        # Alpine 使用 adduser 而不是 useradd
-        adduser -S -H -s /sbin/nologin hysteria 2>/dev/null
-    else
-        useradd -M -s /sbin/nologin hysteria 2>/dev/null
     fi
 }
 
