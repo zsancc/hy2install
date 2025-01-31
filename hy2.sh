@@ -43,45 +43,35 @@ install_base() {
 
 # 安装 Hysteria2
 install_hysteria() {
-    echo -e "${GREEN}开始安装 Hysteria 2...${PLAIN}"
-    
-    # 安装必要的包
-    if [[ ${release} == "centos" ]]; then
-        yum install wget curl tar shadow-utils -y
-    elif [[ ${release} == "alpine" ]]; then
+    # 检查是否为 Alpine 系统
+    if grep -qi "alpine" /etc/os-release; then
+        echo -e "${GREEN}开始安装 Hysteria 2...${PLAIN}"
+        
+        # Alpine 专用安装流程
         apk add --no-cache curl wget tar shadow
-    else
-        apt install wget curl tar passwd -y
-    fi
-    
-    # 创建用户
-    if [[ ${release} == "alpine" ]]; then
+        
+        # 创建用户
         adduser -S -H -s /sbin/nologin hysteria 2>/dev/null
-    else
-        useradd -M -s /sbin/nologin hysteria 2>/dev/null
-    fi
-    
-    # 下载最新版本
-    echo -e "${GREEN}下载 Hysteria 2...${PLAIN}"
-    wget -O hysteria.tar.gz "https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64.tar.gz"
-    
-    if [[ $? != 0 ]]; then
-        echo -e "${RED}下载 Hysteria2 失败，请检查网络${PLAIN}"
-        exit 1
-    fi
-    
-    # 解压并安装
-    tar -xzf hysteria.tar.gz
-    mv hysteria /usr/local/bin/
-    chmod +x /usr/local/bin/hysteria
-    rm -f hysteria.tar.gz
-    
-    # 创建目录
-    mkdir -p /etc/hysteria
-    mkdir -p /var/log/hysteria
-    
-    # 创建服务文件
-    if [[ ${release} == "alpine" ]]; then
+        
+        # 下载最新版本
+        echo -e "${GREEN}下载 Hysteria 2...${PLAIN}"
+        wget -O hysteria.tar.gz "https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64.tar.gz"
+        
+        if [[ $? != 0 ]]; then
+            echo -e "${RED}下载 Hysteria2 失败，请检查网络${PLAIN}"
+            exit 1
+        fi
+        
+        # 解压并安装
+        tar -xzf hysteria.tar.gz
+        mv hysteria /usr/local/bin/
+        chmod +x /usr/local/bin/hysteria
+        rm -f hysteria.tar.gz
+        
+        # 创建目录
+        mkdir -p /etc/hysteria
+        mkdir -p /var/log/hysteria
+        
         # 创建 OpenRC service 文件
         cat > /etc/init.d/hysteria << 'EOF'
 #!/sbin/openrc-run
@@ -109,37 +99,22 @@ start_pre() {
 EOF
         chmod +x /etc/init.d/hysteria
         rc-update add hysteria default
-    else
-        # 创建 systemd service 文件
-        cat > /etc/systemd/system/hysteria-server.service << 'EOF'
-[Unit]
-Description=Hysteria Server Service
-After=network.target
-
-[Service]
-User=hysteria
-Group=hysteria
-Type=simple
-LimitNOFILE=infinity
-ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml
-WorkingDirectory=/etc/hysteria
-StandardOutput=append:/var/log/hysteria/access.log
-StandardError=append:/var/log/hysteria/error.log
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-        systemctl daemon-reload
-        systemctl enable hysteria-server.service
+        
+        # 设置权限
+        chown -R hysteria:hysteria /etc/hysteria
+        chown -R hysteria:hysteria /var/log/hysteria
+        
+        echo -e "${GREEN}Hysteria2 安装完成！${PLAIN}"
+        return 0
     fi
-    
-    # 设置权限
-    chown -R hysteria:hysteria /etc/hysteria
-    chown -R hysteria:hysteria /var/log/hysteria
-    
-    echo -e "${GREEN}Hysteria2 安装完成！${PLAIN}"
+
+    # 非 Alpine 系统使用官方脚本
+    export FORCE_NO_SYSTEMD=2
+    bash <(curl -fsSL https://get.hy2.sh/)
+    if [[ $? != 0 ]]; then
+        echo -e "${RED}Hysteria2 安装失败，请检查错误信息${PLAIN}"
+        exit 1
+    fi
 }
 
 # 生成配置文件
