@@ -100,36 +100,34 @@ EOF
 # Generate hy2 command
 generate_hy2_command() {
     cat > /usr/local/bin/hy2 << 'EOF'
-#!/bin/bash
+#!/bin/sh
 
 case "$1" in
-    "start")
+    start)
         service hysteria start
         ;;
-    "stop")
+    stop)
         service hysteria stop
         ;;
-    "restart")
+    restart)
         service hysteria restart
         ;;
-    "status")
+    status)
         service hysteria status
         ;;
-    "config")
+    config)
         cat /etc/hysteria/config.yaml
         ;;
-    "share")
+    share)
         PASSWORD=$(grep password /etc/hysteria/config.yaml | awk '{print $2}')
         PORT=$(grep listen /etc/hysteria/config.yaml | awk -F: '{print $3}')
         DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
-        if [ -z "$DOMAIN" ]; then
-            DOMAIN="bing.com"
-        fi
+        [ -z "$DOMAIN" ] && DOMAIN="bing.com"
         SHARE_LINK="hysteria2://${PASSWORD}@${DOMAIN}:${PORT}/?sni=${DOMAIN}&alpn=h3,h2,http/1.1&insecure=0#${DOMAIN}"
-        echo -e "\nShare Link:"
-        echo $SHARE_LINK
-        echo -e "\nQR Code:"
-        echo $SHARE_LINK | qrencode -t ANSI
+        echo "\nShare Link:"
+        echo "$SHARE_LINK"
+        echo "\nQR Code:"
+        echo "$SHARE_LINK" | qrencode -t ANSI
         ;;
     *)
         echo "Usage: hy2 {start|stop|restart|status|config|share}"
