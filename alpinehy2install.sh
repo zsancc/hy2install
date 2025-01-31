@@ -105,7 +105,7 @@ install_hysteria() {
     
     # Install dependencies
     apk update
-    apk add curl git openssh openssl openrc libqrencode
+    apk add curl git openssh openssl openrc qrencode
     
     get_user_input
     
@@ -192,7 +192,7 @@ uninstall_hysteria() {
 # Install dependencies
 install_dependencies() {
     apk update
-    apk add wget curl git openssh openssl openrc libqrencode
+    apk add wget curl git openssh openssl openrc qrencode
 }
 
 # Get user input with default values
