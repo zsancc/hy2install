@@ -15,12 +15,10 @@
 
 ## 快速开始
 
-### 安装
+### 一键安装
 
 ```bash
-wget -O /usr/local/bin/hy2 https://raw.githubusercontent.com/your-repo/hy2.sh
-chmod +x /usr/local/bin/hy2
-hy2
+bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/hy2.sh)
 ```
 
 ### 使用方法
