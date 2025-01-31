@@ -58,7 +58,11 @@ check_system() {
                 PKG_UPDATE="apk update"
                 PKG_INSTALL="apk add"
                 USE_OPENRC=true
-                ADDITIONAL_DEPS="openrc curl wget tar unzip qrencode bash"
+                ADDITIONAL_DEPS="openrc curl wget tar unzip libqrencode bash coreutils openssl iptables"
+                
+                if ! grep -q "^http.*community" /etc/apk/repositories; then
+                    echo "https://dl-cdn.alpinelinux.org/alpine/latest-stable/community" >> /etc/apk/repositories
+                fi
                 ;;
             "debian"|"ubuntu")
                 PKG_MANAGER="apt"
@@ -86,8 +90,25 @@ check_system() {
 # 安装依赖
 install_deps() {
     info "正在安装依赖..."
-    $PKG_UPDATE
-    $PKG_INSTALL $ADDITIONAL_DEPS || error "依赖安装失败"
+    if [ "$USE_OPENRC" = true ]; then
+        if ! $PKG_UPDATE; then
+            error "更新包索引失败，请检查网络连接和源配置"
+        fi
+        
+        for pkg in $ADDITIONAL_DEPS; do
+            info "安装 $pkg..."
+            if ! $PKG_INSTALL $pkg; then
+                error "安装 $pkg 失败"
+            fi
+        done
+    else
+        $PKG_UPDATE
+        if ! $PKG_INSTALL $ADDITIONAL_DEPS; then
+            error "依赖安装失败"
+        fi
+    fi
+    
+    info "依赖安装完成"
 }
 
 # 配置防火墙
