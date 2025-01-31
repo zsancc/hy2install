@@ -304,7 +304,7 @@ case "\$1" in
         echo "\nShare Link:"
         echo "\$SHARE_LINK"
         echo "\nQR Code:"
-        echo "\$SHARE_LINK" | libqrencode -t ANSI
+        echo "\$SHARE_LINK" | qrencode -t ANSI
         ;;
     *)
         echo "Usage: hy2 {start|stop|restart|status|config|share}"
