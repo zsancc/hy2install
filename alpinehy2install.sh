@@ -324,11 +324,11 @@ case "$1" in
         DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
         [ -z "$DOMAIN" ] && DOMAIN="bing.com"
         SHARE_LINK="hysteria2://${PASSWORD}@${DOMAIN}:${PORT}/?sni=${DOMAIN}&alpn=h3,h2,http/1.1&insecure=0#${DOMAIN}"
-        printf "\nShare Link:\n"
+        printf "\n分享链接:\n"
         printf "%s\n" "$SHARE_LINK"
         printf "\nQR Code:\n"
         if command -v qrencode >/dev/null 2>&1; then
-            printf "%s" "$SHARE_LINK" | qrencode -t ANSI
+            printf "%s" "$SHARE_LINK" | qrencode -t ANSI -s 1
         else
             printf "qrencode not found. Please install with: apk add libqrencode-tools\n"
         fi
