@@ -158,25 +158,28 @@ install_deps() {
 configure_firewall() {
     local port=$1
     
-    if [ "$USE_OPENRC" = true ]; then
-        if command -v iptables >/dev/null; then
-            iptables -I INPUT -p tcp --dport $port -j ACCEPT
-            iptables -I INPUT -p udp --dport $port -j ACCEPT
-            
-            # 保存防火墙规则
-            if [ -f "/etc/iptables/rules-save" ]; then
-                iptables-save > /etc/iptables/rules-save
-            fi
+    # 检查是否已安装防火墙
+    if command -v firewall-cmd >/dev/null 2>&1; then
+        info "配置 firewalld..."
+        firewall-cmd --permanent --add-port=$port/tcp
+        firewall-cmd --permanent --add-port=$port/udp
+        firewall-cmd --reload
+    elif command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+        info "配置 ufw..."
+        ufw allow $port/tcp
+        ufw allow $port/udp
+    elif command -v iptables >/dev/null 2>&1 && ! command -v nft >/dev/null 2>&1; then
+        # 只在使用传统 iptables 而不是 nftables 时配置
+        info "配置 iptables..."
+        iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
+        iptables -I INPUT -p udp --dport "$port" -j ACCEPT
+        
+        # 只在存在保存规则的目录时保存
+        if [ -d "/etc/iptables" ]; then
+            iptables-save > /etc/iptables/rules.v4
         fi
     else
-        if command -v firewall-cmd >/dev/null; then
-            firewall-cmd --permanent --add-port=$port/tcp
-            firewall-cmd --permanent --add-port=$port/udp
-            firewall-cmd --reload
-        elif command -v ufw >/dev/null; then
-            ufw allow $port/tcp
-            ufw allow $port/udp
-        fi
+        info "未检测到活动的防火墙，跳过防火墙配置"
     fi
 }
 
@@ -381,6 +384,10 @@ create_config() {
     
     mkdir -p $CONFIG_DIR
     
+    # 验证参数
+    [ -z "$port" ] && error "端口不能为空"
+    [ -z "$password" ] && error "密码不能为空"
+    
     if [ -n "$domain" ]; then
         cat > "${CONFIG_DIR}/config.yaml" <<EOF
 listen: :${port}
@@ -421,6 +428,9 @@ acl:
   file: ${CONFIG_DIR}/acl.yaml
 EOF
     fi
+    
+    chmod 644 "${CONFIG_DIR}/config.yaml"
+    chown hysteria:hysteria "${CONFIG_DIR}/config.yaml"
 }
 
 # 生成随机密码
@@ -677,20 +687,38 @@ view_logs() {
 # 生成分享链接
 generate_share_link() {
     local config_file="${CONFIG_DIR}/config.yaml"
-    local server_addr=$(curl -s ipv4.icanhazip.com)
+    if [ ! -f "$config_file" ]; then
+        error "配置文件不存在"
+    fi
+    
+    local server_addr=$(curl -s -4 ifconfig.co)
     local port=$(sed -n 's/^listen: :\([0-9]*\)/\1/p' "$config_file")
     local password=$(sed -n 's/^  password: \(.*\)/\1/p' "$config_file")
     local domain=$(sed -n '/^acme:/,/^[^ ]/s/^    - \(.*\)/\1/p' "$config_file" | head -1)
+    
+    # 添加调试信息
+    info "正在生成分享链接..."
+    info "检测到的配置："
+    [ -n "$server_addr" ] && echo "服务器地址: $server_addr"
+    [ -n "$port" ] && echo "端口: $port"
+    [ -n "$password" ] && echo "密码: $password"
+    [ -n "$domain" ] && echo "域名: $domain"
     
     if [ -n "$domain" ]; then
         server_addr=$domain
     fi
     
-    if [ -n "$server_addr" ] && [ -n "$port" ] && [ -n "$password" ]; then
-        echo "hy2://${password}@${server_addr}:${port}"
-    else
-        error "无法生成分享链接：配置信息不完整"
+    if [ -z "$server_addr" ]; then
+        error "无法获取服务器地址"
     fi
+    if [ -z "$port" ]; then
+        error "无法获取端口信息"
+    fi
+    if [ -z "$password" ]; then
+        error "无法获取密码信息"
+    fi
+    
+    echo "hy2://${password}@${server_addr}:${port}"
 }
 
 # 显示分享链接
