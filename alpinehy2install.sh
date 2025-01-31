@@ -1,0 +1,184 @@
+#!/bin/bash
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+# Default values
+DEFAULT_PORT=5525
+DEFAULT_PASSWORD=$(dd if=/dev/random bs=18 count=1 status=none | base64)
+DEFAULT_DOMAIN=""
+DEFAULT_MASQ_SITE="https://news.ycombinator.com/"
+
+# Install dependencies
+install_dependencies() {
+    apk update
+    apk add wget curl git openssh openssl openrc qrencode
+}
+
+# Get user input with default values
+get_user_input() {
+    echo -e "${YELLOW}请输入端口 [默认: $DEFAULT_PORT]:${NC}"
+    read PORT
+    PORT=${PORT:-$DEFAULT_PORT}
+
+    echo -e "${YELLOW}请输入密码 [默认: $DEFAULT_PASSWORD]:${NC}"
+    read PASSWORD
+    PASSWORD=${PASSWORD:-$DEFAULT_PASSWORD}
+
+    echo -e "${YELLOW}请输入域名 (如不需要直接回车):${NC}"
+    read DOMAIN
+    DOMAIN=${DOMAIN:-$DEFAULT_DOMAIN}
+
+    echo -e "${YELLOW}请输入伪装站点 [默认: $DEFAULT_MASQ_SITE]:${NC}"
+    read MASQ_SITE
+    MASQ_SITE=${MASQ_SITE:-$DEFAULT_MASQ_SITE}
+}
+
+# Generate config based on whether domain is provided
+generate_config() {
+    if [ -z "$DOMAIN" ]; then
+        cat > /etc/hysteria/config.yaml << EOF
+listen: :$PORT
+
+tls:
+  cert: /etc/hysteria/server.crt
+  key: /etc/hysteria/server.key
+
+auth:
+  type: password
+  password: $PASSWORD
+
+masquerade:
+  type: proxy
+  proxy:
+    url: $MASQ_SITE
+    rewriteHost: true
+EOF
+    else
+        cat > /etc/hysteria/config.yaml << EOF
+listen: :$PORT
+
+acme:
+  domains:
+    - $DOMAIN
+  email: admin@$DOMAIN
+
+auth:
+  type: password
+  password: $PASSWORD
+
+masquerade:
+  type: proxy
+  proxy:
+    url: $MASQ_SITE
+    rewriteHost: true
+EOF
+    fi
+}
+
+# Generate OpenRC service file
+generate_service() {
+    cat > /etc/init.d/hysteria << EOF
+#!/sbin/openrc-run
+
+name="hysteria"
+command="/usr/local/bin/hysteria"
+command_args="server --config /etc/hysteria/config.yaml"
+pidfile="/var/run/\${name}.pid"
+command_background="yes"
+
+depend() {
+    need networking
+}
+EOF
+    chmod +x /etc/init.d/hysteria
+}
+
+# Generate hy2 command
+generate_hy2_command() {
+    cat > /usr/local/bin/hy2 << 'EOF'
+#!/bin/bash
+
+case "$1" in
+    "start")
+        service hysteria start
+        ;;
+    "stop")
+        service hysteria stop
+        ;;
+    "restart")
+        service hysteria restart
+        ;;
+    "status")
+        service hysteria status
+        ;;
+    "config")
+        cat /etc/hysteria/config.yaml
+        ;;
+    "share")
+        PASSWORD=$(grep password /etc/hysteria/config.yaml | awk '{print $2}')
+        PORT=$(grep listen /etc/hysteria/config.yaml | awk -F: '{print $3}')
+        DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
+        if [ -z "$DOMAIN" ]; then
+            DOMAIN="bing.com"
+        fi
+        SHARE_LINK="hysteria2://${PASSWORD}@${DOMAIN}:${PORT}/?sni=${DOMAIN}&alpn=h3,h2,http/1.1&insecure=0#${DOMAIN}"
+        echo -e "\nShare Link:"
+        echo $SHARE_LINK
+        echo -e "\nQR Code:"
+        echo $SHARE_LINK | qrencode -t ANSI
+        ;;
+    *)
+        echo "Usage: hy2 {start|stop|restart|status|config|share}"
+        ;;
+esac
+EOF
+    chmod +x /usr/local/bin/hy2
+}
+
+# Main installation process
+main() {
+    echo -e "${GREEN}开始安装 Hysteria 2...${NC}"
+    
+    install_dependencies
+    
+    get_user_input
+    
+    # Download Hysteria 2
+    wget -O /usr/local/bin/hysteria https://download.hysteria.network/app/latest/hysteria-linux-amd64
+    chmod +x /usr/local/bin/hysteria
+    
+    # Create config directory
+    mkdir -p /etc/hysteria/
+    
+    # Generate self-signed cert if no domain provided
+    if [ -z "$DOMAIN" ]; then
+        openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
+            -keyout /etc/hysteria/server.key -out /etc/hysteria/server.crt \
+            -subj "/CN=bing.com" -days 36500
+    fi
+    
+    generate_config
+    generate_service
+    generate_hy2_command
+    
+    # Enable and start service
+    rc-update add hysteria
+    service hysteria start
+    
+    echo -e "${GREEN}Hysteria 2 安装完成!${NC}"
+    echo -e "${YELLOW}配置信息:${NC}"
+    echo "端口: $PORT"
+    echo "密码: $PASSWORD"
+    echo "域名: ${DOMAIN:-bing.com}"
+    echo -e "\n使用 'hy2' 命令管理服务:"
+    echo "hy2 {start|stop|restart|status|config|share}"
+    
+    # Show share link
+    hy2 share
+}
+
+main

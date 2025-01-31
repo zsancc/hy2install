@@ -1,6 +1,6 @@
 # Hysteria 2 一键安装管理脚本
 
-这是一个用于安装和管理 Hysteria 2 的 Shell 脚本，支持 Alpine Linux 在内的多个 Linux 发行版。
+这是一个用于安装和管理 Hysteria 2 的 Shell 脚本，支持 Alpine Linux
 
 ## 功能特点
 
