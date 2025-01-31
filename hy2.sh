@@ -262,7 +262,7 @@ show_menu() {
     case "${num}" in
         1) install_hysteria && generate_config && start_service ;;
         2) install_hysteria ;;
-        3) stop_service && remove_hysteria ;;
+        3) remove_hysteria ;;
         4) start_service ;;
         5) stop_service ;;
         6) restart_service ;;
@@ -332,7 +332,10 @@ remove_hysteria() {
         rm -f /usr/local/bin/hysteria
         rm -f /etc/init.d/hysteria
         rm -rf /etc/hysteria
+        rm -rf /var/log/hysteria
+        echo -e "${GREEN}Hysteria2 已卸载！${PLAIN}"
     else
+        export FORCE_NO_SYSTEMD=2
         bash <(curl -fsSL https://get.hy2.sh/) --remove
     fi
 }
