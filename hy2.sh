@@ -350,87 +350,48 @@ backup_restore() {
     esac
 }
 
-# 创建 OpenRC 服务文件
-create_openrc_service() {
-    cat > "${SERVICE_DIR}/hysteria" <<EOF
-#!/sbin/openrc-run
-
-name="hysteria"
-description="Hysteria 2 Proxy Server"
-command="/usr/local/bin/hysteria"
-command_args="server --config /etc/hysteria/config.yaml"
-command_background=true
-pidfile="/run/\${RC_SVCNAME}.pid"
-output_log="/var/log/hysteria/access.log"
-error_log="/var/log/hysteria/error.log"
-
-depend() {
-    need net
-    after firewall
+# 检查服务是否已安装
+is_installed() {
+    if [ -f "$INSTALL_DIR/hysteria" ] && [ -f "$CONFIG_DIR/config.yaml" ]; then
+        return 0
+    fi
+    return 1
 }
 
-start_pre() {
-    checkpath -d -m 0755 -o hysteria:hysteria /var/log/hysteria
+# 生成自签名证书
+generate_cert() {
+    if [ ! -f "$CONFIG_DIR/server.crt" ] || [ ! -f "$CONFIG_DIR/server.key" ]; then
+        info "生成自签名证书..."
+        openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
+            -keyout "$CONFIG_DIR/server.key" \
+            -out "$CONFIG_DIR/server.crt" \
+            -subj "/CN=bing.com" -days 36500
+    fi
 }
-EOF
-    chmod +x "${SERVICE_DIR}/hysteria"
-}
 
-# 创建基础配置文件
-create_config() {
-    local port=$1
-    local password=$2
-    local domain=$3
+# 交互式配置函数
+configure_server() {
+    echo -e "\n配置 Hysteria 2 服务器\n"
     
-    mkdir -p $CONFIG_DIR
-    
-    # 验证参数
-    [ -z "$port" ] && error "端口不能为空"
-    [ -z "$password" ] && error "密码不能为空"
-    
-    if [ -n "$domain" ]; then
-        cat > "${CONFIG_DIR}/config.yaml" <<EOF
-listen: :${port}
-
-acme:
-  domains:
-    - ${domain}
-  email: admin@${domain}
-
-auth:
-  type: password
-  password: ${password}
-
-masquerade:
-  type: proxy
-  proxy:
-    url: ${DEFAULT_MASQ}
-    rewriteHost: true
-
-acl:
-  file: ${CONFIG_DIR}/acl.yaml
-EOF
-    else
-        cat > "${CONFIG_DIR}/config.yaml" <<EOF
-listen: :${port}
-
-auth:
-  type: password
-  password: ${password}
-
-masquerade:
-  type: proxy
-  proxy:
-    url: ${DEFAULT_MASQ}
-    rewriteHost: true
-
-acl:
-  file: ${CONFIG_DIR}/acl.yaml
-EOF
+    # 配置端口
+    local port="$DEFAULT_PORT"
+    read -p "请输入端口 [默认: $DEFAULT_PORT]: " input_port
+    if [ -n "$input_port" ]; then
+        port="$input_port"
     fi
     
-    chmod 644 "${CONFIG_DIR}/config.yaml"
-    chown hysteria:hysteria "${CONFIG_DIR}/config.yaml"
+    # 配置密码
+    local password="$(generate_password)"
+    read -p "请输入密码 [默认: $password]: " input_password
+    if [ -n "$input_password" ]; then
+        password="$input_password"
+    fi
+    
+    # 配置域名（可选）
+    local domain=""
+    read -p "请输入域名 [可选，回车跳过]: " domain
+    
+    echo "$port|$password|$domain"
 }
 
 # 生成随机密码
@@ -442,32 +403,16 @@ generate_password() {
 service_control() {
     local action=$1
     if [ "$USE_OPENRC" = true ]; then
+        if [ ! -f "${SERVICE_DIR}/hysteria" ]; then
+            error "服务未安装"
+        fi
         rc-service hysteria $action
     else
+        if [ ! -f "/etc/systemd/system/hysteria.service" ]; then
+            error "服务未安装"
+        fi
         systemctl $action hysteria
     fi
-}
-
-# 交互式配置函数
-configure_server() {
-    echo -e "\n配置 Hysteria 2 服务器\n"
-    
-    # 配置端口
-    local port
-    read -p "请输入端口 [默认: $DEFAULT_PORT]: " port
-    port=${port:-$DEFAULT_PORT}
-    
-    # 配置密码
-    local password
-    read -p "请输入密码 [默认: 随机生成]: " password
-    password=${password:-$(generate_password)}
-    
-    # 配置域名（可选）
-    local domain
-    read -p "请输入域名 [可选]: " domain
-    
-    # 返回配置
-    echo "$port|$password|$domain"
 }
 
 # 安装 Hysteria 2
@@ -627,21 +572,31 @@ update_hysteria() {
 
 # 卸载 Hysteria 2
 uninstall_hysteria() {
-    service_control stop
+    if ! is_installed; then
+        warn "Hysteria 2 未安装"
+        return
+    fi
+    
+    info "开始卸载 Hysteria 2..."
+    
+    service_control stop 2>/dev/null
     
     if [ "$USE_OPENRC" = true ]; then
-        rc-update del hysteria default
+        rc-update del hysteria default 2>/dev/null
         rm -f "${SERVICE_DIR}/hysteria"
     else
-        systemctl disable hysteria
+        systemctl disable hysteria 2>/dev/null
         rm -f /etc/systemd/system/hysteria.service
     fi
     
     rm -f "${INSTALL_DIR}/hysteria"
     rm -rf $CONFIG_DIR $LOG_DIR $DATA_DIR
-    deluser hysteria
     
-    echo "Hysteria 2 已卸载"
+    if getent passwd hysteria >/dev/null; then
+        deluser hysteria 2>/dev/null
+    fi
+    
+    info "Hysteria 2 已卸载"
 }
 
 # 检查运行状态
