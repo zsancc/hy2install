@@ -225,28 +225,66 @@ get_user_input() {
     read PASSWORD
     PASSWORD=${PASSWORD:-$DEFAULT_PASSWORD}
 
-    echo -e "${YELLOW}请输入域名 (如不需要直接回车):${NC}"
-    read DOMAIN
-    DOMAIN=${DOMAIN:-$DEFAULT_DOMAIN}
+    echo -e "${YELLOW}请选择 TLS 验证方式:${NC}"
+    echo "1. 自定义证书 (适用于 NAT VPS 或自定义证书)"
+    echo "2. ACME HTTP 验证 (需要 80 端口)"
+    echo "3. Cloudflare DNS 验证"
+    read -p "请选择 [1-3]: " TLS_TYPE
+
+    case "$TLS_TYPE" in
+        1)
+            echo -e "${YELLOW}请输入证书路径:${NC}"
+            read CERT_PATH
+            echo -e "${YELLOW}请输入私钥路径:${NC}"
+            read KEY_PATH
+            ;;
+        2)
+            echo -e "${YELLOW}请输入域名:${NC}"
+            read DOMAIN
+            if [ -z "$DOMAIN" ]; then
+                echo "域名不能为空"
+                exit 1
+            fi
+            ;;
+        3)
+            echo -e "${YELLOW}请输入域名:${NC}"
+            read DOMAIN
+            echo -e "${YELLOW}请输入邮箱:${NC}"
+            read EMAIL
+            echo -e "${YELLOW}请输入 Cloudflare API Token (在 Cloudflare 面板中: 我的个人资料->API令牌->Origin CA Key):${NC}"
+            echo -e "${YELLOW}如果没有令牌，请先在 Cloudflare 面板中创建${NC}"
+            read CF_TOKEN
+            if [ -z "$DOMAIN" ] || [ -z "$EMAIL" ] || [ -z "$CF_TOKEN" ]; then
+                echo "所有字段都不能为空"
+                exit 1
+            fi
+            ;;
+        *)
+            echo "无效选项"
+            exit 1
+            ;;
+    esac
 
     echo -e "${YELLOW}请输入伪装站点 [默认: $DEFAULT_MASQ_SITE]:${NC}"
     read MASQ_SITE
     MASQ_SITE=${MASQ_SITE:-$DEFAULT_MASQ_SITE}
 }
 
-# Generate config based on whether domain is provided
+# Generate config based on TLS type
 generate_config() {
-    if [ -z "$DOMAIN" ]; then
-        cat > /etc/hysteria/config.yaml << EOF
+    case "$TLS_TYPE" in
+        1)
+            cat > /etc/hysteria/config.yaml << EOF
 listen: :$PORT
 
 tls:
-  cert: /etc/hysteria/server.crt
-  key: /etc/hysteria/server.key
+  cert: $CERT_PATH
+  key: $KEY_PATH
+  sni_guard: dns-san
 
 auth:
   type: password
-  password: $PASSWORD
+  password: "$PASSWORD"
 
 masquerade:
   type: proxy
@@ -254,8 +292,9 @@ masquerade:
     url: $MASQ_SITE
     rewriteHost: true
 EOF
-    else
-        cat > /etc/hysteria/config.yaml << EOF
+            ;;
+        2)
+            cat > /etc/hysteria/config.yaml << EOF
 listen: :$PORT
 
 acme:
@@ -265,7 +304,7 @@ acme:
 
 auth:
   type: password
-  password: $PASSWORD
+  password: "$PASSWORD"
 
 masquerade:
   type: proxy
@@ -273,10 +312,36 @@ masquerade:
     url: $MASQ_SITE
     rewriteHost: true
 EOF
-    fi
+            ;;
+        3)
+            cat > /etc/hysteria/config.yaml << EOF
+listen: :$PORT
+
+acme:
+  domains:
+    - $DOMAIN
+  email: $EMAIL
+  type: dns
+  dns:
+    name: cloudflare
+    config:
+      cloudflare_api_token: $CF_TOKEN
+
+auth:
+  type: password
+  password: "$PASSWORD"
+
+masquerade:
+  type: proxy
+  proxy:
+    url: $MASQ_SITE
+    rewriteHost: true
+EOF
+            ;;
+    esac
 }
 
-# Generate OpenRC service file
+# Generate OpenRC service file with proper server mode and logging
 generate_service() {
     cat > /etc/init.d/hysteria << EOF
 #!/sbin/openrc-run
@@ -284,11 +349,19 @@ generate_service() {
 name="hysteria"
 command="/usr/local/bin/hysteria"
 command_args="server --config /etc/hysteria/config.yaml"
-pidfile="/var/run/\${name}.pid"
 command_background="yes"
+pidfile="/var/run/\${name}.pid"
+output_log="/var/log/hysteria.log"
+error_log="/var/log/hysteria.error.log"
+
+start_pre() {
+    checkpath -f \$output_log
+    checkpath -f \$error_log
+}
 
 depend() {
-    need networking
+    need net
+    after firewall
 }
 EOF
     chmod +x /etc/init.d/hysteria
@@ -319,7 +392,7 @@ case "$1" in
         cat /etc/hysteria/config.yaml
         ;;
     share)
-        PASSWORD=$(grep password /etc/hysteria/config.yaml | awk '{print $2}')
+        PASSWORD=$(grep "password:" /etc/hysteria/config.yaml | awk '{print $NF}')
         PORT=$(grep listen /etc/hysteria/config.yaml | awk -F: '{print $3}')
         DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
         [ -z "$DOMAIN" ] && DOMAIN="bing.com"
@@ -328,7 +401,7 @@ case "$1" in
         printf "%s\n" "$SHARE_LINK"
         printf "\nQR Code:\n"
         if command -v qrencode >/dev/null 2>&1; then
-            printf "%s" "$SHARE_LINK" | qrencode -t ANSI -s 1
+            printf "%s" "$SHARE_LINK" | qrencode -t ANSI -s 1 -m 1
         else
             printf "qrencode not found. Please install with: apk add libqrencode-tools\n"
         fi
