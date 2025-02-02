@@ -148,11 +148,8 @@ install_hysteria() {
         echo "端口: $PORT"
         echo "密码: $PASSWORD"
         echo "域名: ${DOMAIN:-bing.com}"
-        echo -e "\n使用 'hy2' 命令管理服务:"
-        echo "hy2 {start|stop|restart|status|config|share}"
-        
-        # Show share link
-        /usr/local/bin/hy2 share
+        echo -e "\n使用 'hy2' 命令管理 Hysteria 2"
+        echo -e "运行 'hy2' 显示管理菜单\n"
     else
         echo -e "${RED}安装失败，请检查错误信息${NC}"
         exit 1
@@ -251,7 +248,7 @@ get_user_input() {
             read DOMAIN
             echo -e "${YELLOW}请输入邮箱:${NC}"
             read EMAIL
-            echo -e "${YELLOW}请输入 Cloudflare API Token (在 Cloudflare 面板中: 我的个人资料->API令牌->Origin CA Key):${NC}"
+            echo -e "${YELLOW}请输入 Cloudflare API Token (在 Cloudflare 面板中: 我的个人资料->API令牌->创建Token->使用 Edit zone DNS 模板->权限类型：Zone / DNS / Edit,资源：Include / Specific zone / 选择你的域名，如 baidu.com):${NC}"
             echo -e "${YELLOW}如果没有令牌，请先在 Cloudflare 面板中创建${NC}"
             read CF_TOKEN
             if [ -z "$DOMAIN" ] || [ -z "$EMAIL" ] || [ -z "$CF_TOKEN" ]; then
@@ -260,6 +257,7 @@ get_user_input() {
             fi
             ;;
         *)
+        
             echo "无效选项"
             exit 1
             ;;
@@ -357,11 +355,22 @@ error_log="/var/log/hysteria.error.log"
 start_pre() {
     checkpath -f \$output_log
     checkpath -f \$error_log
+    chmod 644 \$output_log
+    chmod 644 \$error_log
 }
 
 depend() {
     need net
     after firewall
+}
+
+start() {
+    ebegin "Starting \$name"
+    start-stop-daemon --start --quiet --background \
+        --make-pidfile --pidfile \$pidfile \
+        --stdout \$output_log --stderr \$error_log \
+        --exec \$command -- \$command_args
+    eend \$?
 }
 EOF
     chmod +x /etc/init.d/hysteria
@@ -374,42 +383,107 @@ generate_hy2_command() {
 
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-case "$1" in
-    start)
-        service hysteria start
-        ;;
-    stop)
-        service hysteria stop
-        ;;
-    restart)
-        service hysteria restart
-        ;;
-    status)
-        service hysteria status
-        ;;
-    config)
-        cat /etc/hysteria/config.yaml
-        ;;
-    share)
-        PASSWORD=$(grep "password:" /etc/hysteria/config.yaml | awk '{print $NF}')
-        PORT=$(grep listen /etc/hysteria/config.yaml | awk -F: '{print $3}')
-        DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
-        [ -z "$DOMAIN" ] && DOMAIN="bing.com"
-        SHARE_LINK="hysteria2://${PASSWORD}@${DOMAIN}:${PORT}/?sni=${DOMAIN}&insecure=0#${DOMAIN}"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+show_menu() {
+    clear
+    echo -e "${GREEN}Hysteria 2 管理菜单${NC}"
+    echo "------------------------"
+    echo "1. 更新 Hysteria 2"
+    echo "2. 卸载 Hysteria 2"
+    echo "3. 启动服务"
+    echo "4. 停止服务"
+    echo "5. 重启服务"
+    echo "6. 查看状态"
+    echo "7. 查看配置"
+    echo "8. 修改配置"
+    echo "9. 查看日志"
+    echo "10. 查看分享链接"
+    echo "11. 显示分享二维码"
+    echo "0. 退出"
+    echo "------------------------"
+    read -p "请选择操作 [0-11]: " choice
+
+    case "$choice" in
+        1) 
+            echo -e "${YELLOW}更新 Hysteria 2...${NC}"
+            wget -O /usr/local/bin/hysteria https://download.hysteria.network/app/latest/hysteria-linux-amd64
+            chmod +x /usr/local/bin/hysteria
+            service hysteria restart
+            echo -e "${GREEN}更新完成${NC}"
+            ;;
+        2) 
+            echo -e "${YELLOW}卸载 Hysteria 2...${NC}"
+            service hysteria stop
+            rc-update del hysteria default
+            rm -f /usr/local/bin/hysteria
+            rm -f /usr/local/bin/hy2
+            rm -f /etc/init.d/hysteria
+            rm -rf /etc/hysteria
+            echo -e "${GREEN}卸载完成${NC}"
+            exit 0
+            ;;
+        3) 
+            service hysteria start
+            sleep 2
+            tail -n 10 /var/log/hysteria.log
+            ;;
+        4) service hysteria stop ;;
+        5) 
+            service hysteria restart
+            sleep 2
+            tail -n 10 /var/log/hysteria.log
+            ;;
+        6) service hysteria status ;;
+        7) cat /etc/hysteria/config.yaml ;;
+        8) 
+            # 重新运行安装脚本的配置部分
+            bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/alpinehy2install.sh) config
+            ;;
+        9) 
+            if [ -f "/var/log/hysteria.log" ]; then
+                tail -f /var/log/hysteria.log
+            else
+                echo "日志文件不存在"
+            fi
+            ;;
+        10|11)
+            PASSWORD=$(grep "password:" /etc/hysteria/config.yaml | awk '{print $NF}')
+            PORT=$(grep listen /etc/hysteria/config.yaml | awk -F: '{print $3}')
+            DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
+            [ -z "$DOMAIN" ] && DOMAIN="bing.com"
+            SHARE_LINK="hysteria2://${PASSWORD}@${DOMAIN}:${PORT}/?sni=${DOMAIN}&insecure=0#${DOMAIN}"
+            echo
+            echo "分享链接:"
+            echo "$SHARE_LINK"
+            if [ "$choice" = "11" ]; then
+                echo
+                echo "QR Code:"
+                command -v qrencode >/dev/null 2>&1 && {
+                    qrencode -t ANSIUTF8 "$SHARE_LINK"
+                } || echo "qrencode not found. Please install with: apk add libqrencode-tools"
+            fi
+            ;;
+        0) exit 0 ;;
+        *) 
+            echo "无效选项"
+            sleep 2
+            show_menu
+            ;;
+    esac
+    
+    if [ "$choice" != "0" ] && [ "$choice" != "2" ]; then
         echo
-        echo "分享链接:"
-        echo "$SHARE_LINK"
-        echo
-        echo "QR Code:"
-        command -v qrencode >/dev/null 2>&1 && {
-            SHARE_CMD="qrencode -t UTF8 -s 2 -m 2 \"$SHARE_LINK\""
-            eval "$SHARE_CMD"
-        } || echo "qrencode not found. Please install with: apk add libqrencode-tools"
-        ;;
-    *)
-        echo "Usage: hy2 {start|stop|restart|status|config|share}"
-        ;;
-esac
+        read -p "按回车键返回主菜单"
+        show_menu
+    fi
+}
+
+show_menu
 EOF
     chmod +x /usr/local/bin/hy2
 }
@@ -421,35 +495,45 @@ main() {
     
     echo -e "${GREEN}开始安装 Hysteria 2...${NC}"
     
-    # 检查必要命令
-    if ! command -v wget >/dev/null 2>&1; then
-        apk add wget
-    fi
-    
     install_dependencies
     get_user_input
     
     # Download Hysteria 2
+    echo -e "${YELLOW}下载 Hysteria 2...${NC}"
     wget -O /usr/local/bin/hysteria https://download.hysteria.network/app/latest/hysteria-linux-amd64
     chmod +x /usr/local/bin/hysteria
     
     # Create config directory
     mkdir -p /etc/hysteria/
     
-    # Generate self-signed cert if no domain provided
-    if [ -z "$DOMAIN" ]; then
-        openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
-            -keyout /etc/hysteria/server.key -out /etc/hysteria/server.crt \
-            -subj "/CN=bing.com" -days 36500
+    # Generate self-signed cert if needed
+    if [ "$TLS_TYPE" = "1" ]; then
+        echo -e "${YELLOW}使用自定义证书...${NC}"
+        # 检查证书文件是否存在
+        if [ ! -f "$CERT_PATH" ] || [ ! -f "$KEY_PATH" ]; then
+            echo -e "${RED}证书文件不存在${NC}"
+            exit 1
+        fi
     fi
     
+    echo -e "${YELLOW}生成配置文件...${NC}"
     generate_config
+    
+    echo -e "${YELLOW}配置系统服务...${NC}"
     generate_service
     generate_hy2_command
     
     # Enable and start service
+    echo -e "${YELLOW}启动服务...${NC}"
     rc-update add hysteria default
     service hysteria start
+    
+    # 等待服务启动并获取日志
+    sleep 2
+    if [ -f "/var/log/hysteria.log" ]; then
+        echo -e "${YELLOW}服务启动日志:${NC}"
+        tail -n 10 /var/log/hysteria.log
+    fi
     
     # 验证安装
     if [ -f "/usr/local/bin/hy2" ] && [ -x "/usr/local/bin/hy2" ]; then
@@ -458,16 +542,13 @@ main() {
         echo "端口: $PORT"
         echo "密码: $PASSWORD"
         echo "域名: ${DOMAIN:-bing.com}"
-        echo -e "\n使用 'hy2' 命令管理服务:"
-        echo "hy2 {start|stop|restart|status|config|share}"
-        
-        # Show share link
-        /usr/local/bin/hy2 share
+        echo -e "\n使用 'hy2' 命令管理 Hysteria 2"
+        echo -e "运行 'hy2' 显示管理菜单\n"
     else
         echo -e "${RED}安装失败，请检查错误信息${NC}"
         exit 1
     fi
 }
 
-# Start script
-show_menu
+# 直接运行主函数
+main
