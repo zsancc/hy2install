@@ -372,7 +372,6 @@ generate_hy2_command() {
     cat > /usr/local/bin/hy2 << 'EOF'
 #!/bin/sh
 
-# 确保 PATH 包含必要路径
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 case "$1" in
@@ -397,14 +396,15 @@ case "$1" in
         DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
         [ -z "$DOMAIN" ] && DOMAIN="bing.com"
         SHARE_LINK="hysteria2://${PASSWORD}@${DOMAIN}:${PORT}/?sni=${DOMAIN}&insecure=0#${DOMAIN}"
-        printf "\n分享链接:\n"
-        printf "%s\n" "$SHARE_LINK"
-        printf "\nQR Code:\n"
-        if command -v qrencode >/dev/null 2>&1; then
-            qrencode -t ANSIUTF8 "$SHARE_LINK"
-        else
-            printf "qrencode not found. Please install with: apk add libqrencode-tools\n"
-        fi
+        echo
+        echo "分享链接:"
+        echo "$SHARE_LINK"
+        echo
+        echo "QR Code:"
+        command -v qrencode >/dev/null 2>&1 && {
+            SHARE_CMD="qrencode -t ANSIUTF8 \"$SHARE_LINK\""
+            eval "$SHARE_CMD"
+        } || echo "qrencode not found. Please install with: apk add libqrencode-tools"
         ;;
     *)
         echo "Usage: hy2 {start|stop|restart|status|config|share}"
