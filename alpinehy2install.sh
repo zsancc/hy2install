@@ -428,17 +428,37 @@ show_menu() {
             exit 0
             ;;
         3) 
-            service hysteria start
-            sleep 2
-            tail -n 10 /var/log/hysteria.log
+            echo -e "${YELLOW}启动服务...${NC}"
+            service hysteria stop >/dev/null 2>&1  # 先停止服务以防端口占用
+            /usr/local/bin/hysteria server --config /etc/hysteria/config.yaml --disable-update-check
+            if [ $? -eq 0 ]; then
+                service hysteria start
+            else
+                echo -e "${RED}启动失败${NC}"
+            fi
             ;;
-        4) service hysteria stop ;;
+        4) 
+            echo -e "${YELLOW}停止服务...${NC}"
+            service hysteria stop
+            ;;
         5) 
-            service hysteria restart
-            sleep 2
-            tail -n 10 /var/log/hysteria.log
+            echo -e "${YELLOW}重启服务...${NC}"
+            service hysteria stop
+            /usr/local/bin/hysteria server --config /etc/hysteria/config.yaml --disable-update-check
+            if [ $? -eq 0 ]; then
+                service hysteria start
+            else
+                echo -e "${RED}启动失败${NC}"
+            fi
             ;;
-        6) service hysteria status ;;
+        6) 
+            echo -e "${YELLOW}服务状态:${NC}"
+            service hysteria status
+            if [ -f "/var/run/hysteria.pid" ]; then
+                echo -e "\n${YELLOW}程序输出:${NC}"
+                /usr/local/bin/hysteria server --config /etc/hysteria/config.yaml --disable-update-check
+            fi
+            ;;
         7) cat /etc/hysteria/config.yaml ;;
         8) 
             # 重新运行安装脚本的配置部分
