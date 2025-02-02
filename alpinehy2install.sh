@@ -80,6 +80,25 @@ update_hysteria() {
     echo "更新完成"
 }
 
+# 配置函数，用于安装和修改配置
+configure_hysteria() {
+    get_user_input
+    generate_config
+    
+    # 如果服务已经在运行，重启服务
+    if [ -f "/usr/local/bin/hysteria" ]; then
+        echo -e "${YELLOW}重启服务以应用新配置...${NC}"
+        service hysteria stop
+        /usr/local/bin/hysteria server --config /etc/hysteria/config.yaml --disable-update-check
+        if [ $? -eq 0 ]; then
+            service hysteria start
+            echo -e "${GREEN}配置修改成功${NC}"
+        else
+            echo -e "${RED}配置有误，启动失败${NC}"
+        fi
+    fi
+}
+
 # Install function
 install_hysteria() {
     # 检查是否已安装
@@ -117,7 +136,8 @@ install_hysteria() {
         echo -e "${YELLOW}警告: qrencode 安装失败，二维码功能将不可用${NC}"
     fi
     
-    get_user_input
+    install_dependencies
+    configure_hysteria  # 使用配置函数
     
     # Download Hysteria 2
     wget -O /usr/local/bin/hysteria https://download.hysteria.network/app/latest/hysteria-linux-amd64
@@ -461,8 +481,8 @@ show_menu() {
             ;;
         7) cat /etc/hysteria/config.yaml ;;
         8) 
-            # 重新运行安装脚本的配置部分
-            bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/alpinehy2install.sh) config
+            echo -e "${YELLOW}修改配置...${NC}"
+            configure_hysteria
             ;;
         9) 
             if [ -f "/var/log/hysteria.log" ]; then
@@ -569,6 +589,6 @@ main() {
         exit 1
     fi
 }
-
 # 直接运行主函数
 main
+
