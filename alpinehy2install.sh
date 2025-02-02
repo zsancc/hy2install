@@ -284,7 +284,7 @@ tls:
 
 auth:
   type: password
-  password: "$PASSWORD"
+  password: $PASSWORD
 
 masquerade:
   type: proxy
@@ -304,7 +304,7 @@ acme:
 
 auth:
   type: password
-  password: "$PASSWORD"
+  password: $PASSWORD
 
 masquerade:
   type: proxy
@@ -329,7 +329,7 @@ acme:
 
 auth:
   type: password
-  password: "$PASSWORD"
+  password: $PASSWORD
 
 masquerade:
   type: proxy
@@ -392,7 +392,7 @@ case "$1" in
         cat /etc/hysteria/config.yaml
         ;;
     share)
-        PASSWORD=$(grep "password:" /etc/hysteria/config.yaml | awk '{print $NF}' | tr -d '"')
+        PASSWORD=$(grep "password:" /etc/hysteria/config.yaml | awk '{print $NF}')
         PORT=$(grep listen /etc/hysteria/config.yaml | awk -F: '{print $3}')
         DOMAIN=$(grep domains -A 1 /etc/hysteria/config.yaml | grep - | awk '{print $2}')
         [ -z "$DOMAIN" ] && DOMAIN="bing.com"
@@ -401,7 +401,7 @@ case "$1" in
         printf "%s\n" "$SHARE_LINK"
         printf "\nQR Code:\n"
         if command -v qrencode >/dev/null 2>&1; then
-            printf "%s" "$SHARE_LINK" | qrencode -t ANSI -s 2 -l L
+            qrencode -t ANSIUTF8 "$SHARE_LINK"
         else
             printf "qrencode not found. Please install with: apk add libqrencode-tools\n"
         fi
