@@ -402,7 +402,7 @@ case "$1" in
         echo
         echo "QR Code:"
         command -v qrencode >/dev/null 2>&1 && {
-            SHARE_CMD="qrencode -t ANSIUTF8 \"$SHARE_LINK\""
+            SHARE_CMD="qrencode -t UTF8 -s 2 -m 2 \"$SHARE_LINK\""
             eval "$SHARE_CMD"
         } || echo "qrencode not found. Please install with: apk add libqrencode-tools"
         ;;
