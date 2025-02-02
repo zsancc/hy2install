@@ -34,10 +34,25 @@ show_menu() {
     read -p "请选择操作 [0-12]: " choice
     
     case "$choice" in
-        1) install_hysteria ;;
-        2) update_hysteria ;;
+        1) check_installed && install_hysteria ;;
+        2) 
+            echo -e "${YELLOW}更新 Hysteria 2...${NC}"
+            wget -O /usr/local/bin/hysteria https://download.hysteria.network/app/latest/hysteria-linux-amd64
+            chmod +x /usr/local/bin/hysteria
+            service hysteria restart
+            echo -e "${GREEN}更新完成${NC}"
+            ;;
         3) uninstall_hysteria ;;
-        4) service hysteria start ;;
+        4) 
+            echo -e "${YELLOW}启动服务...${NC}"
+            service hysteria stop >/dev/null 2>&1
+            /usr/local/bin/hysteria server --config /etc/hysteria/config.yaml --disable-update-check
+            if [ $? -eq 0 ]; then
+                service hysteria start
+            else
+                echo -e "${RED}启动失败${NC}"
+            fi
+            ;;
         5) service hysteria stop ;;
         6) service hysteria restart ;;
         7) service hysteria status ;;
@@ -85,17 +100,14 @@ configure_hysteria() {
     get_user_input
     generate_config
     
-    # 如果服务已经在运行，重启服务
-    if [ -f "/usr/local/bin/hysteria" ]; then
-        echo -e "${YELLOW}重启服务以应用新配置...${NC}"
-        service hysteria stop
-        /usr/local/bin/hysteria server --config /etc/hysteria/config.yaml --disable-update-check
-        if [ $? -eq 0 ]; then
-            service hysteria start
-            echo -e "${GREEN}配置修改成功${NC}"
-        else
-            echo -e "${RED}配置有误，启动失败${NC}"
-        fi
+    echo -e "${YELLOW}重启服务以应用新配置...${NC}"
+    service hysteria stop
+    /usr/local/bin/hysteria server --config /etc/hysteria/config.yaml --disable-update-check
+    if [ $? -eq 0 ]; then
+        service hysteria start
+        echo -e "${GREEN}配置修改成功${NC}"
+    else
+        echo -e "${RED}配置有误，启动失败${NC}"
     fi
 }
 
@@ -123,19 +135,6 @@ install_hysteria() {
     fi
     
     # Install dependencies
-    apk update
-    apk add curl git openssh openssl openrc
-    # 单独安装并验证 qrencode
-    if ! apk add libqrencode-tools; then
-        echo -e "${RED}安装 qrencode 失败，尝试从社区仓库安装${NC}"
-        apk add --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community libqrencode-tools
-    fi
-    
-    # 验证 qrencode 是否安装成功
-    if ! command -v qrencode >/dev/null 2>&1; then
-        echo -e "${YELLOW}警告: qrencode 安装失败，二维码功能将不可用${NC}"
-    fi
-    
     install_dependencies
     configure_hysteria  # 使用配置函数
     
@@ -185,21 +184,12 @@ check_installed() {
         echo -e "${YELLOW}检测到已安装 Hysteria 2${NC}"
         echo -e "请选择操作："
         echo "1. 卸载重装"
-        echo "2. 退出"
+        echo "2. 返回主菜单"
         read -p "请输入选项 [1-2]: " choice
-        
         case "$choice" in
-            1)
-                uninstall_hysteria
-                ;;
-            2)
-                echo "退出安装"
-                exit 0
-                ;;
-            *)
-                echo "无效选项，退出"
-                exit 1
-                ;;
+            1) uninstall_hysteria && return 0 ;;
+            2) return 1 ;;
+            *) echo "无效选项" && return 1 ;;
         esac
     fi
 }
@@ -218,6 +208,7 @@ uninstall_hysteria() {
 
 # Install dependencies
 install_dependencies() {
+    echo -e "${YELLOW}安装依赖...${NC}"
     apk update
     apk add wget curl git openssh openssl openrc
     # 单独安装并验证 qrencode
