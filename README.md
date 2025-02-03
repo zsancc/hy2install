@@ -1,16 +1,25 @@
-# Alpine Hysteria 2 安装脚本
+# Hysteria 2 一键安装管理脚本
 
-这是一个用于 Alpine Linux 的 Hysteria 2 一键安装管理脚本。
+这是一个用于 Linux 系统的 Hysteria 2 一键安装管理脚本。
+
+## 支持的系统
+- Debian/Ubuntu
+- CentOS/RHEL
+- Alpine Linux (使用 [alpinehy2install.sh](https://raw.githubusercontent.com/zsancc/hy2install/main/alpinehy2install.sh))
 
 ## 快速安装
 
 ```bash
+# Debian/Ubuntu/CentOS 等系统
+bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/hy2install.sh)
+
+# Alpine Linux
 bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/alpinehy2install.sh)
 ```
 
 ## 功能特点
 
-- 专为 Alpine Linux 优化
+- 支持多种 Linux 发行版
 - 支持多种 TLS 验证方式：
   1. 自定义证书（适用于 NAT VPS）
   2. ACME HTTP 验证（需要 80 端口）
@@ -18,6 +27,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/alpin
 - 自动生成分享链接和二维码
 - 注册系统命令 `hy2` 便于管理
 - 支持开机自启动
+- 自动适配 systemd/sysvinit 服务管理
 
 ## 管理命令
 
@@ -59,7 +69,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/alpin
 
 ## 系统要求
 
-- Alpine Linux
+- 支持的 Linux 发行版
 - Root 权限
 - 基本网络连接
 
@@ -76,7 +86,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/zsancc/hy2install/main/alpin
 ## 问题反馈
 
 如遇问题，请提供：
-1. Alpine 版本
+1. Linux 发行版和版本
 2. 错误信息
 3. 相关日志（`hy2` 命令中的查看日志功能）
 
